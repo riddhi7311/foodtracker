@@ -2,7 +2,7 @@
   "name": "Food Tracker",
   "short_name": "Food Tracker",
   "description": "Track your daily food intake, calories, and macros",
-  "start_url": "/",
+  "start_url": "/foodtracker/",
   "display": "standalone",
   "background_color": "#667eea",
   "theme_color": "#667eea",
