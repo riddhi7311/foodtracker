@@ -1,0 +1,549 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#667eea">
+    <meta name="description" content="Track your daily food intake, calories, and macros">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Food Tracker">
+    <link rel="manifest" href="manifest.json">
+    <title>Food Tracker</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        @keyframes slideIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .animate-slide { animation: slideIn 0.3s ease-out; }
+        .card { transition: all 0.2s ease; }
+        .card:hover { transform: translateY(-2px); box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04); }
+        .btn { transition: all 0.15s ease; }
+        .btn:active { transform: scale(0.98); }
+        .gradient-bg { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
+        .install-prompt {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 16px 24px;
+            border-radius: 16px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+            z-index: 1000;
+            display: none;
+            align-items: center;
+            gap: 12px;
+        }
+        .install-prompt.show { display: flex; animation: slideIn 0.3s ease-out; }
+    </style>
+</head>
+<body class="bg-gray-50">
+    <div class="install-prompt" id="installPrompt">
+        <span>📱 Install Food Tracker for quick access!</span>
+        <button onclick="installApp()" class="bg-white text-purple-600 px-4 py-2 rounded-lg font-bold">Install</button>
+        <button onclick="dismissInstall()" class="text-white opacity-70 hover:opacity-100">✕</button>
+    </div>
+    <div id="app"></div>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script>
+        // Service Worker Registration
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('sw.js').then(registration => {
+                    console.log('ServiceWorker registered:', registration);
+                }).catch(err => {
+                    console.log('ServiceWorker registration failed:', err);
+                });
+            });
+        }
+
+        // PWA Install Prompt
+        let deferredPrompt;
+        window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            deferredPrompt = e;
+            const dismissed = localStorage.getItem('installPromptDismissed');
+            if (!dismissed) {
+                document.getElementById('installPrompt').classList.add('show');
+            }
+        });
+
+        function installApp() {
+            if (deferredPrompt) {
+                deferredPrompt.prompt();
+                deferredPrompt.userChoice.then((choiceResult) => {
+                    if (choiceResult.outcome === 'accepted') {
+                        console.log('User accepted the install prompt');
+                    }
+                    deferredPrompt = null;
+                    document.getElementById('installPrompt').classList.remove('show');
+                });
+            }
+        }
+
+        function dismissInstall() {
+            document.getElementById('installPrompt').classList.remove('show');
+            localStorage.setItem('installPromptDismissed', 'true');
+        }
+    </script>
+    <script type="text/babel">
+const { useState, useEffect, useRef } = React;
+
+const initialFoodsData = [
+    { name: 'Nayosa Extra Firm Tofu', servingSize: 85, calories: 70, protein: 8, carbs: 2, fat: 4 },
+    { name: 'Paneer', servingSize: 28, calories: 90, protein: 7, carbs: 1, fat: 7 },
+    { name: 'Protein Shake', servingSize: 33, calories: 120, protein: 25, carbs: 4, fat: 1 },
+    { name: 'Premier Protein Cereal', servingSize: 42, calories: 180, protein: 20, carbs: 14, fat: 5 },
+    { name: 'Roti', servingSize: 1, calories: 78, protein: 2.4, carbs: 13.8, fat: 2.1 },
+    { name: 'Oil', servingSize: 15, calories: 120, protein: 0, carbs: 0, fat: 14 },
+    { name: 'Oat Milk', servingSize: 240, calories: 80, protein: 1, carbs: 1, fat: 2.5 },
+    { name: 'Chia Seeds', servingSize: 30, calories: 150, protein: 5, carbs: 0, fat: 0 },
+    { name: 'Greek Yogurt', servingSize: 170, calories: 90, protein: 18, carbs: 5, fat: 0 },
+    { name: 'Protein Bar', servingSize: 1, calories: 190, protein: 16, carbs: 14, fat: 8 },
+    { name: 'Poha', servingSize: 25, calories: 104, protein: 1.5, carbs: 21, fat: 1 },
+    { name: 'Peanuts', servingSize: 1, calories: 5.9, protein: 0.2, carbs: 0.2, fat: 0.5 },
+    { name: 'Nuts', servingSize: 28, calories: 170, protein: 5, carbs: 7, fat: 15 },
+    { name: 'Dal', servingSize: 51, calories: 170, protein: 13, carbs: 31, fat: 0.5 },
+    { name: 'Dates', servingSize: 40, calories: 110, protein: 1, carbs: 30, fat: 0 },
+    { name: 'Rice', servingSize: 45, calories: 180, protein: 3, carbs: 42, fat: 0 },
+    { name: 'Sabzi', servingSize: 100, calories: 100, protein: 0, carbs: 0, fat: 0 },
+    { name: 'Peanut Butter', servingSize: 33, calories: 190, protein: 7, carbs: 8, fat: 16 },
+    { name: 'Bread', servingSize: 40, calories: 110, protein: 3, carbs: 21, fat: 2 },
+    { name: 'Soya Chunks', servingSize: 15, calories: 50, protein: 7, carbs: 5, fat: 0 },
+    { name: 'Pasta', servingSize: 56, calories: 200, protein: 7, carbs: 42, fat: 1 },
+    { name: 'Besan', servingSize: 100, calories: 387, protein: 22, carbs: 58, fat: 7 },
+    { name: 'Protein Chips', servingSize: 1, calories: 140, protein: 19, carbs: 5, fat: 5 },
+    { name: 'Angel hair pasta', servingSize: 56, calories: 200, protein: 7, carbs: 42, fat: 1 },
+    { name: 'Vegan Sausage', servingSize: 1, calories: 240, protein: 27, carbs: 10, fat: 10 },
+    { name: 'Kala Chana', servingSize: 35, calories: 127, protein: 7, carbs: 21, fat: 2 },
+    { name: 'Black eyed peas', servingSize: 35, calories: 90, protein: 3, carbs: 19, fat: 0 },
+    { name: 'Semolina Rava', servingSize: 40, calories: 140, protein: 5, carbs: 29, fat: 0 },
+    { name: 'Oats', servingSize: 50, calories: 190, protein: 6, carbs: 34, fat: 3.5 },
+    { name: 'Grapes', servingSize: 100, calories: 70, protein: 0, carbs: 0, fat: 0 },
+    { name: 'Honeydew', servingSize: 100, calories: 36, protein: 0.5, carbs: 9.1, fat: 0.1 },
+    { name: 'Chocolate Chip', servingSize: 15, calories: 60, protein: 0, carbs: 0, fat: 0 },
+    { name: 'Cheese', servingSize: 28, calories: 100, protein: 6, carbs: 1, fat: 8 },
+    { name: 'Black Beans', servingSize: 60, calories: 120, protein: 7, carbs: 22, fat: 0.5 },
+    { name: 'Taco Shells', servingSize: 2, calories: 130, protein: 2, carbs: 17, fat: 6 }
+];
+
+function FoodTrackerApp() {
+    const [foods, setFoods] = useState([]);
+    const [dailyLog, setDailyLog] = useState([]);
+    const [activeTab, setActiveTab] = useState('tracker');
+    const [targets, setTargets] = useState({ calories: 1600, protein: 100 });
+    const [editingTargets, setEditingTargets] = useState(false);
+    const [newFood, setNewFood] = useState({ name: '', servingSize: '', calories: '', protein: '', carbs: '', fat: '' });
+    const [logEntry, setLogEntry] = useState({ foodId: '', weight: '' });
+    const [editingFood, setEditingFood] = useState(null);
+    const chartRef = useRef(null);
+    const chartInstance = useRef(null);
+
+    useEffect(() => {
+        const savedFoods = localStorage.getItem('foodTrackerFoods');
+        const savedLog = localStorage.getItem('foodTrackerDailyLog');
+        const savedDate = localStorage.getItem('foodTrackerDate');
+        const savedTargets = localStorage.getItem('foodTrackerTargets');
+        const today = new Date().toDateString();
+
+        if (savedFoods) {
+            setFoods(JSON.parse(savedFoods));
+        } else {
+            const foodsWithIds = initialFoodsData.map((f, i) => ({ ...f, id: i + 1 }));
+            setFoods(foodsWithIds);
+            localStorage.setItem('foodTrackerFoods', JSON.stringify(foodsWithIds));
+        }
+
+        if (savedLog && savedDate === today) {
+            setDailyLog(JSON.parse(savedLog));
+        } else {
+            setDailyLog([]);
+            localStorage.setItem('foodTrackerDate', today);
+        }
+
+        if (savedTargets) setTargets(JSON.parse(savedTargets));
+    }, []);
+
+    useEffect(() => {
+        if (foods.length > 0) localStorage.setItem('foodTrackerFoods', JSON.stringify(foods));
+    }, [foods]);
+
+    useEffect(() => {
+        localStorage.setItem('foodTrackerDailyLog', JSON.stringify(dailyLog));
+    }, [dailyLog]);
+
+    useEffect(() => {
+        localStorage.setItem('foodTrackerTargets', JSON.stringify(targets));
+    }, [targets]);
+
+    useEffect(() => {
+        if (activeTab === 'tracker' && chartRef.current) {
+            const totals = getTotals();
+            if (chartInstance.current) chartInstance.current.destroy();
+            
+            const ctx = chartRef.current.getContext('2d');
+            chartInstance.current = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Protein', 'Carbs', 'Fat'],
+                    datasets: [{
+                        data: [totals.protein * 4, totals.carbs * 4, totals.fat * 9],
+                        backgroundColor: ['#3b82f6', '#fbbf24', '#ec4899'],
+                        borderWidth: 0,
+                        hoverOffset: 4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    cutout: '70%',
+                    plugins: {
+                        legend: { 
+                            position: 'bottom', 
+                            labels: { 
+                                font: { size: 13, weight: '500' }, 
+                                padding: 20,
+                                usePointStyle: true,
+                                pointStyle: 'circle'
+                            } 
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(ctx) {
+                                    const total = ctx.dataset.data.reduce((a, b) => a + b, 0);
+                                    const pct = total > 0 ? ((ctx.parsed / total) * 100).toFixed(1) : 0;
+                                    return ctx.label + ': ' + pct + '%';
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+        return () => { if (chartInstance.current) chartInstance.current.destroy(); };
+    }, [dailyLog, activeTab]);
+
+    const getTotals = () => {
+        return dailyLog.reduce((acc, entry) => ({
+            calories: acc.calories + parseFloat(entry.calories),
+            protein: acc.protein + parseFloat(entry.protein),
+            carbs: acc.carbs + parseFloat(entry.carbs),
+            fat: acc.fat + parseFloat(entry.fat)
+        }), { calories: 0, protein: 0, carbs: 0, fat: 0 });
+    };
+
+    const totals = getTotals();
+    const calProgress = (totals.calories / targets.calories) * 100;
+    const proteinProgress = (totals.protein / targets.protein) * 100;
+
+    return (
+        <div className="min-h-screen bg-gray-50">
+            <div className="gradient-bg text-white shadow-xl">
+                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+                    <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
+                        <div>
+                            <h1 className="text-4xl font-bold tracking-tight">Food Tracker</h1>
+                            <p className="text-purple-100 mt-1">{new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
+                        </div>
+                        <div className="flex gap-3">
+                            <button onClick={() => {
+                                const data = { foods, dailyLog, targets, date: new Date().toDateString() };
+                                const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+                                const url = URL.createObjectURL(blob);
+                                const a = document.createElement('a');
+                                a.href = url;
+                                a.download = 'food-tracker-backup.json';
+                                a.click();
+                            }} className="btn bg-white bg-opacity-20 hover:bg-opacity-30 backdrop-blur-sm text-white px-5 py-2.5 rounded-xl font-medium shadow-lg">
+                                📥 Export
+                            </button>
+                            <label className="btn bg-white bg-opacity-20 hover:bg-opacity-30 backdrop-blur-sm text-white px-5 py-2.5 rounded-xl font-medium shadow-lg cursor-pointer">
+                                📤 Import
+                                <input type="file" accept=".json" onChange={(e) => {
+                                    const file = e.target.files[0];
+                                    if (file) {
+                                        const reader = new FileReader();
+                                        reader.onload = (ev) => {
+                                            try {
+                                                const data = JSON.parse(ev.target.result);
+                                                if (data.foods) setFoods(data.foods);
+                                                if (data.dailyLog) setDailyLog(data.dailyLog);
+                                                if (data.targets) setTargets(data.targets);
+                                                alert('✅ Data imported successfully!');
+                                            } catch { alert('❌ Error importing data'); }
+                                        };
+                                        reader.readAsText(file);
+                                    }
+                                }} className="hidden" />
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+                <div className="flex gap-3 mb-8">
+                    <button onClick={() => setActiveTab('tracker')} className={`flex-1 py-4 px-6 rounded-2xl font-semibold text-lg transition-all ${activeTab === 'tracker' ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-xl scale-105' : 'bg-white text-gray-700 hover:bg-gray-50 shadow'}`}>
+                        📊 Daily Tracker
+                    </button>
+                    <button onClick={() => setActiveTab('database')} className={`flex-1 py-4 px-6 rounded-2xl font-semibold text-lg transition-all ${activeTab === 'database' ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-xl scale-105' : 'bg-white text-gray-700 hover:bg-gray-50 shadow'}`}>
+                        🗂️ Food Database
+                    </button>
+                </div>
+
+                {activeTab === 'tracker' && (
+                    <div className="space-y-6 animate-slide">
+                        <div className="card bg-white rounded-3xl shadow-lg p-8">
+                            <div className="flex justify-between items-center mb-6">
+                                <h2 className="text-2xl font-bold text-gray-800">🎯 Daily Targets</h2>
+                                <button onClick={() => setEditingTargets(!editingTargets)} className="btn bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white px-6 py-2.5 rounded-xl font-semibold shadow-md">
+                                    {editingTargets ? '💾 Save' : '✏️ Edit'}
+                                </button>
+                            </div>
+                            {editingTargets ? (
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    <div>
+                                        <label className="block text-sm font-semibold text-gray-700 mb-2">Target Calories</label>
+                                        <input type="number" value={targets.calories} onChange={(e) => setTargets({...targets, calories: parseFloat(e.target.value)})} className="w-full px-5 py-3 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition" />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-semibold text-gray-700 mb-2">Target Protein (g)</label>
+                                        <input type="number" value={targets.protein} onChange={(e) => setTargets({...targets, protein: parseFloat(e.target.value)})} className="w-full px-5 py-3 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition" />
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    <div className="bg-gradient-to-br from-orange-50 to-red-50 p-6 rounded-2xl border-2 border-orange-100">
+                                        <p className="text-sm font-semibold text-gray-600 mb-1">Target Calories</p>
+                                        <p className="text-3xl font-bold text-orange-600">{targets.calories}</p>
+                                    </div>
+                                    <div className="bg-gradient-to-br from-blue-50 to-indigo-50 p-6 rounded-2xl border-2 border-blue-100">
+                                        <p className="text-sm font-semibold text-gray-600 mb-1">Target Protein (g)</p>
+                                        <p className="text-3xl font-bold text-blue-600">{targets.protein}</p>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="card bg-white rounded-3xl shadow-lg p-8">
+                            <h2 className="text-2xl font-bold text-gray-800 mb-6">📈 Today's Progress</h2>
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                                <div className={`p-6 rounded-2xl border-2 transition-all ${totals.calories > targets.calories ? 'bg-gradient-to-br from-red-50 to-red-100 border-red-200' : 'bg-gradient-to-br from-green-50 to-green-100 border-green-200'}`}>
+                                    <div className="flex justify-between items-start mb-2">
+                                        <p className="text-sm font-semibold text-gray-700">Calories</p>
+                                        <span className="text-2xl">{totals.calories > targets.calories ? '⚠️' : '✅'}</span>
+                                    </div>
+                                    <p className={`text-4xl font-bold mb-2 ${totals.calories > targets.calories ? 'text-red-600' : 'text-green-600'}`}>{totals.calories.toFixed(0)}</p>
+                                    <div className="w-full bg-gray-200 rounded-full h-2.5 mb-2">
+                                        <div className={`h-2.5 rounded-full ${totals.calories > targets.calories ? 'bg-red-500' : 'bg-green-500'}`} style={{width: Math.min(calProgress, 100) + '%'}}></div>
+                                    </div>
+                                    <p className="text-xs font-medium text-gray-600">Target: {targets.calories} ({calProgress.toFixed(0)}%)</p>
+                                </div>
+                                <div className={`p-6 rounded-2xl border-2 transition-all ${totals.protein >= targets.protein ? 'bg-gradient-to-br from-green-50 to-green-100 border-green-200' : 'bg-gradient-to-br from-red-50 to-red-100 border-red-200'}`}>
+                                    <div className="flex justify-between items-start mb-2">
+                                        <p className="text-sm font-semibold text-gray-700">Protein (g)</p>
+                                        <span className="text-2xl">{totals.protein >= targets.protein ? '✅' : '⚠️'}</span>
+                                    </div>
+                                    <p className={`text-4xl font-bold mb-2 ${totals.protein >= targets.protein ? 'text-green-600' : 'text-red-600'}`}>{totals.protein.toFixed(1)}</p>
+                                    <div className="w-full bg-gray-200 rounded-full h-2.5 mb-2">
+                                        <div className={`h-2.5 rounded-full ${totals.protein >= targets.protein ? 'bg-green-500' : 'bg-red-500'}`} style={{width: Math.min(proteinProgress, 100) + '%'}}></div>
+                                    </div>
+                                    <p className="text-xs font-medium text-gray-600">Target: {targets.protein}g ({proteinProgress.toFixed(0)}%)</p>
+                                    </div>
+                                <div className="bg-gradient-to-br from-yellow-50 to-yellow-100 p-6 rounded-2xl border-2 border-yellow-200">
+                                    <p className="text-sm font-semibold text-gray-700 mb-2">Carbs (g)</p>
+                                    <p className="text-4xl font-bold text-yellow-600">{totals.carbs.toFixed(1)}</p>
+                                    <p className="text-xs font-medium text-gray-600 mt-3">{((totals.carbs * 4 / Math.max(totals.calories, 1)) * 100).toFixed(0)}% of calories</p>
+                                </div>
+                                <div className="bg-gradient-to-br from-pink-50 to-pink-100 p-6 rounded-2xl border-2 border-pink-200">
+                                    <p className="text-sm font-semibold text-gray-700 mb-2">Fat (g)</p>
+                                    <p className="text-4xl font-bold text-pink-600">{totals.fat.toFixed(1)}</p>
+                                    <p className="text-xs font-medium text-gray-600 mt-3">{((totals.fat * 9 / Math.max(totals.calories, 1)) * 100).toFixed(0)}% of calories</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="card bg-white rounded-3xl shadow-lg p-8">
+                            <h2 className="text-2xl font-bold text-gray-800 mb-6">🥧 Macro Distribution</h2>
+                            <div className="max-w-sm mx-auto">
+                                <canvas ref={chartRef}></canvas>
+                            </div>
+                            {totals.calories === 0 && <p className="text-center text-gray-500 mt-6 text-sm">Log some food to see your macro breakdown</p>}
+                        </div>
+
+                        <div className="card bg-gradient-to-br from-green-500 to-emerald-600 rounded-3xl shadow-xl p-8 text-white">
+                            <h2 className="text-2xl font-bold mb-6">➕ Log Food</h2>
+                            <div className="flex flex-col md:flex-row gap-4">
+                                <select value={logEntry.foodId} onChange={(e) => setLogEntry({...logEntry, foodId: e.target.value})} className="flex-1 px-5 py-4 bg-white bg-opacity-20 backdrop-blur-sm border-2 border-white border-opacity-30 rounded-xl text-white placeholder-white placeholder-opacity-70 focus:border-opacity-50 focus:ring-2 focus:ring-white focus:ring-opacity-30 outline-none transition">
+                                    <option value="" className="text-gray-800">Select a food...</option>
+                                    {foods.map(food => <option key={food.id} value={food.id} className="text-gray-800">{food.name} ({food.servingSize}g)</option>)}
+                                </select>
+                                <input type="number" step="0.1" placeholder="Weight (g)" value={logEntry.weight} onChange={(e) => setLogEntry({...logEntry, weight: e.target.value})} className="w-full md:w-48 px-5 py-4 bg-white bg-opacity-20 backdrop-blur-sm border-2 border-white border-opacity-30 rounded-xl text-white placeholder-white placeholder-opacity-70 focus:border-opacity-50 focus:ring-2 focus:ring-white focus:ring-opacity-30 outline-none transition" />
+                                <button onClick={() => {
+                                    if (logEntry.foodId && logEntry.weight) {
+                                        const food = foods.find(f => f.id === parseInt(logEntry.foodId));
+                                        const mult = parseFloat(logEntry.weight) / food.servingSize;
+                                        setDailyLog([...dailyLog, {
+                                            id: Date.now(),
+                                            foodName: food.name,
+                                            weight: parseFloat(logEntry.weight),
+                                            calories: (food.calories * mult).toFixed(1),
+                                            protein: (food.protein * mult).toFixed(1),
+                                            carbs: (food.carbs * mult).toFixed(1),
+                                            fat: (food.fat * mult).toFixed(1)
+                                        }]);
+                                        setLogEntry({ foodId: '', weight: '' });
+                                    }
+                                }} className="btn bg-white text-green-600 px-8 py-4 rounded-xl hover:bg-opacity-90 font-bold shadow-lg">
+                                    Add Entry
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className="card bg-white rounded-3xl shadow-lg p-8">
+                            <h2 className="text-2xl font-bold text-gray-800 mb-6">📝 Today's Log</h2>
+                            {dailyLog.length === 0 ? (
+                                <div className="text-center py-16">
+                                    <div className="text-6xl mb-4">🍽️</div>
+                                    <p className="text-gray-500 text-lg">No entries yet. Start logging your meals!</p>
+                                </div>
+                            ) : (
+                                <div className="overflow-x-auto rounded-2xl border border-gray-200">
+                                    <table className="w-full">
+                                        <thead className="bg-gradient-to-r from-gray-50 to-gray-100">
+                                            <tr>
+                                                <th className="px-6 py-4 text-left text-sm font-bold text-gray-700">Food</th>
+                                                <th className="px-6 py-4 text-left text-sm font-bold text-gray-700">Weight</th>
+                                                <th className="px-6 py-4 text-left text-sm font-bold text-gray-700">Cal</th>
+                                                <th className="px-6 py-4 text-left text-sm font-bold text-gray-700">Protein</th>
+                                                <th className="px-6 py-4 text-left text-sm font-bold text-gray-700">Carbs</th>
+                                                <th className="px-6 py-4 text-left text-sm font-bold text-gray-700">Fat</th>
+                                                <th className="px-6 py-4 text-left text-sm font-bold text-gray-700">Action</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-gray-100">
+                                            {dailyLog.map(entry => (
+                                                <tr key={entry.id} className="hover:bg-gray-50 transition">
+                                                    <td className="px-6 py-4 font-medium text-gray-900">{entry.foodName}</td>
+                                                    <td className="px-6 py-4 text-gray-600">{entry.weight}g</td>
+                                                    <td className="px-6 py-4 font-semibold text-gray-900">{entry.calories}</td>
+                                                    <td className="px-6 py-4 text-blue-600 font-medium">{entry.protein}g</td>
+                                                    <td className="px-6 py-4 text-yellow-600 font-medium">{entry.carbs}g</td>
+                                                    <td className="px-6 py-4 text-pink-600 font-medium">{entry.fat}g</td>
+                                                    <td className="px-6 py-4">
+                                                        <button onClick={() => setDailyLog(dailyLog.filter(l => l.id !== entry.id))} className="btn text-red-600 hover:text-red-700 hover:bg-red-50 px-4 py-2 rounded-lg font-semibold transition">
+                                                            Delete
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                )}
+
+                {activeTab === 'database' && (
+                    <div className="space-y-6 animate-slide">
+                        <div className="card bg-gradient-to-br from-blue-500 to-indigo-600 rounded-3xl shadow-xl p-8 text-white">
+                            <h2 className="text-2xl font-bold mb-6">➕ Add New Food</h2>
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <input type="text" placeholder="Food Name" value={newFood.name} onChange={(e) => setNewFood({...newFood, name: e.target.value})} className="px-5 py-4 bg-white bg-opacity-20 backdrop-blur-sm border-2 border-white border-opacity-30 rounded-xl text-white placeholder-white placeholder-opacity-70 focus:border-opacity-50 focus:ring-2 focus:ring-white focus:ring-opacity-30 outline-none transition" />
+                                <input type="number" step="0.1" placeholder="Serving (g)" value={newFood.servingSize} onChange={(e) => setNewFood({...newFood, servingSize: e.target.value})} className="px-5 py-4 bg-white bg-opacity-20 backdrop-blur-sm border-2 border-white border-opacity-30 rounded-xl text-white placeholder-white placeholder-opacity-70 focus:border-opacity-50 focus:ring-2 focus:ring-white focus:ring-opacity-30 outline-none transition" />
+                                <input type="number" step="0.1" placeholder="Calories" value={newFood.calories} onChange={(e) => setNewFood({...newFood, calories: e.target.value})} className="px-5 py-4 bg-white bg-opacity-20 backdrop-blur-sm border-2 border-white border-opacity-30 rounded-xl text-white placeholder-white placeholder-opacity-70 focus:border-opacity-50 focus:ring-2 focus:ring-white focus:ring-opacity-30 outline-none transition" />
+                                <input type="number" step="0.1" placeholder="Protein (g)" value={newFood.protein} onChange={(e) => setNewFood({...newFood, protein: e.target.value})} className="px-5 py-4 bg-white bg-opacity-20 backdrop-blur-sm border-2 border-white border-opacity-30 rounded-xl text-white placeholder-white placeholder-opacity-70 focus:border-opacity-50 focus:ring-2 focus:ring-white focus:ring-opacity-30 outline-none transition" />
+                                <input type="number" step="0.1" placeholder="Carbs (g)" value={newFood.carbs} onChange={(e) => setNewFood({...newFood, carbs: e.target.value})} className="px-5 py-4 bg-white bg-opacity-20 backdrop-blur-sm border-2 border-white border-opacity-30 rounded-xl text-white placeholder-white placeholder-opacity-70 focus:border-opacity-50 focus:ring-2 focus:ring-white focus:ring-opacity-30 outline-none transition" />
+                                <input type="number" step="0.1" placeholder="Fat (g)" value={newFood.fat} onChange={(e) => setNewFood({...newFood, fat: e.target.value})} className="px-5 py-4 bg-white bg-opacity-20 backdrop-blur-sm border-2 border-white border-opacity-30 rounded-xl text-white placeholder-white placeholder-opacity-70 focus:border-opacity-50 focus:ring-2 focus:ring-white focus:ring-opacity-30 outline-none transition" />
+                                <button onClick={() => {
+                                    if (newFood.name && newFood.servingSize && newFood.calories) {
+                                        setFoods([...foods, {
+                                            id: Date.now(),
+                                            name: newFood.name,
+                                            servingSize: parseFloat(newFood.servingSize),
+                                            calories: parseFloat(newFood.calories),
+                                            protein: parseFloat(newFood.protein) || 0,
+                                            carbs: parseFloat(newFood.carbs) || 0,
+                                            fat: parseFloat(newFood.fat) || 0
+                                        }]);
+                                        setNewFood({ name: '', servingSize: '', calories: '', protein: '', carbs: '', fat: '' });
+                                    }
+                                }} className="btn md:col-span-3 bg-white text-blue-600 px-8 py-4 rounded-xl hover:bg-opacity-90 font-bold shadow-lg">
+                                    Add to Database
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className="card bg-white rounded-3xl shadow-lg p-8">
+                            <div className="flex justify-between items-center mb-6">
+                                <h2 className="text-2xl font-bold text-gray-800">🗂️ Food Database</h2>
+                                <span className="bg-gradient-to-r from-purple-100 to-indigo-100 text-purple-700 px-4 py-2 rounded-full text-sm font-bold">{foods.length} items</span>
+                            </div>
+                            <div className="overflow-x-auto rounded-2xl border border-gray-200" style={{maxHeight: '600px', overflowY: 'auto'}}>
+                                <table className="w-full">
+                                    <thead className="bg-gradient-to-r from-gray-50 to-gray-100 sticky top-0">
+                                        <tr>
+                                            <th className="px-6 py-4 text-left text-sm font-bold text-gray-700">Food</th>
+                                            <th className="px-6 py-4 text-left text-sm font-bold text-gray-700">Serving</th>
+                                            <th className="px-6 py-4 text-left text-sm font-bold text-gray-700">Cal</th>
+                                            <th className="px-6 py-4 text-left text-sm font-bold text-gray-700">Protein</th>
+                                            <th className="px-6 py-4 text-left text-sm font-bold text-gray-700">Carbs</th>
+                                            <th className="px-6 py-4 text-left text-sm font-bold text-gray-700">Fat</th>
+                                            <th className="px-6 py-4 text-left text-sm font-bold text-gray-700">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-gray-100">
+                                        {foods.map(food => (
+                                            <tr key={food.id} className="hover:bg-gray-50 transition">
+                                                {editingFood && editingFood.id === food.id ? (
+                                                    <>
+                                                        <td className="px-6 py-3"><input type="text" value={editingFood.name} onChange={(e) => setEditingFood({...editingFood, name: e.target.value})} className="w-full px-3 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 outline-none" /></td>
+                                                        <td className="px-6 py-3"><input type="number" step="0.1" value={editingFood.servingSize} onChange={(e) => setEditingFood({...editingFood, servingSize: parseFloat(e.target.value)})} className="w-full px-3 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 outline-none" /></td>
+                                                        <td className="px-6 py-3"><input type="number" step="0.1" value={editingFood.calories} onChange={(e) => setEditingFood({...editingFood, calories: parseFloat(e.target.value)})} className="w-full px-3 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 outline-none" /></td>
+                                                        <td className="px-6 py-3"><input type="number" step="0.1" value={editingFood.protein} onChange={(e) => setEditingFood({...editingFood, protein: parseFloat(e.target.value)})} className="w-full px-3 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 outline-none" /></td>
+                                                        <td className="px-6 py-3"><input type="number" step="0.1" value={editingFood.carbs} onChange={(e) => setEditingFood({...editingFood, carbs: parseFloat(e.target.value)})} className="w-full px-3 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 outline-none" /></td>
+                                                        <td className="px-6 py-3"><input type="number" step="0.1" value={editingFood.fat} onChange={(e) => setEditingFood({...editingFood, fat: parseFloat(e.target.value)})} className="w-full px-3 py-2 border-2 border-gray-300 rounded-lg focus:border-blue-500 outline-none" /></td>
+                                                        <td className="px-6 py-3">
+                                                            <div className="flex gap-2">
+                                                                <button onClick={() => { setFoods(foods.map(f => f.id === editingFood.id ? editingFood : f)); setEditingFood(null); }} className="btn bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600 font-semibold">Save</button>
+                                                                <button onClick={() => setEditingFood(null)} className="btn bg-gray-400 text-white px-4 py-2 rounded-lg hover:bg-gray-500 font-semibold">Cancel</button>
+                                                            </div>
+                                                        </td>
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <td className="px-6 py-4 font-medium text-gray-900">{food.name}</td>
+                                                        <td className="px-6 py-4 text-gray-600">{food.servingSize}g</td>
+                                                        <td className="px-6 py-4 font-semibold text-gray-900">{food.calories}</td>
+                                                        <td className="px-6 py-4 text-blue-600 font-medium">{food.protein}g</td>
+                                                        <td className="px-6 py-4 text-yellow-600 font-medium">{food.carbs}g</td>
+                                                        <td className="px-6 py-4 text-pink-600 font-medium">{food.fat}g</td>
+                                                        <td className="px-6 py-4">
+                                                            <div className="flex gap-2">
+                                                                <button onClick={() => setEditingFood({...food})} className="btn text-blue-600 hover:text-blue-700 hover:bg-blue-50 px-4 py-2 rounded-lg font-semibold transition">Edit</button>
+                                                                <button onClick={() => setFoods(foods.filter(f => f.id !== food.id))} className="btn text-red-600 hover:text-red-700 hover:bg-red-50 px-4 py-2 rounded-lg font-semibold transition">Delete</button>
+                                                            </div>
+                                                        </td>
+                                                    </>
+                                                )}
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+}
+
+ReactDOM.render(<FoodTrackerApp />, document.getElementById('app'));
+    </script>
+</body>
+</html>
